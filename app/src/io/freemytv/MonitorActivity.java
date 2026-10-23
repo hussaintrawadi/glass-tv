@@ -100,7 +100,7 @@ public final class MonitorActivity extends Activity {
 
     private void act() {
         if (focus == 0) {
-            // Off → Clear Voice → Max Boost → Off
+            // Off → Clear Voice → Loud & Even → Off
             String now = SoundService.mode(this);
             int i = 0;
             while (i < SOUND_MODES.length && !SOUND_MODES[i].equals(now)) i++;
@@ -229,7 +229,7 @@ public final class MonitorActivity extends Activity {
                 }
                 y += 86 * k;
             }
-            c.drawText(focus == 0 ? "Loud & Even keeps every scene at one loud level. OK changes the mode."
+            c.drawText(focus == 0 ? "Voices on top: dialogue lifted, music and effects held down. OK changes the mode."
                     : focus == 1 ? "Closes apps waiting in the background." : "Opens the TV's own settings.", x, y + 26 * k, note);
         }
 

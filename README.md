@@ -61,9 +61,10 @@ and Claude wrote the Java. It builds on the open source [Free My TV](https://git
 ### Performance & Sound
 - **Live memory and storage**, and **Free Up Memory**, which asks Android to close the apps
   waiting in the background (the app you're watching stays open).
-- **Clear Voice:** lifts the speech frequencies and trims the boom, so dialogue is easy to follow.
-- **Loud & Even:** a leveller with a limiter on the TV's whole sound output. Whispers come up,
-  explosions and music come down, and every scene plays at one steady, loud level.
+- **Clear Voice:** dialogue first. The speech band is levelled and lifted on its own while the
+  bass and boom of music and effects are held down, so voices sit on top of the soundtrack.
+- **Loud & Even:** the same, with more lift for voices and more volume overall, and a limiter so
+  the speakers never crackle.
 
 ### No ads, no clutter
 - Turns off the TV maker's promo channels, ad rows and telemetry apps (never uninstalls them).
