@@ -1,4 +1,4 @@
-"""Renders the app's icon and TV banner (ink, frosted glass, a white TV with orange sparkles) and the README icon.
+"""Renders the app's icon and TV banner (ink, frosted glass, a white TV) and the README icon.
 No text on the banner: the name on the TV is a setting (brand_name).
 Usage: python3 tools/make_brand_art.py"""
 import os
@@ -7,7 +7,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-SPARKLES = os.path.join(ROOT, "app", "assets", "symbols", "sparkles.png")
 
 
 def backdrop(w, h):
@@ -41,7 +40,7 @@ def glass_panel(size, box, radius):
 
 
 def tv_glyph(size, cx, cy, scale):
-    """A white TV outline with a stand and the sparkles inside."""
+    """A white TV outline with its stand. Clean: nothing inside the screen."""
     layer = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     sw, sh = 1.0 * scale, 0.66 * scale
@@ -49,14 +48,6 @@ def tv_glyph(size, cx, cy, scale):
     d.rounded_rectangle((cx - sw / 2, cy - sh / 2, cx + sw / 2, cy + sh / 2), scale * 0.1, outline=(255, 255, 255, 245), width=stroke)
     d.rounded_rectangle((cx - sw * 0.28, cy + sh / 2 + stroke * 1.6, cx + sw * 0.28, cy + sh / 2 + stroke * 2.7),
                         stroke, fill=(255, 255, 255, 245))
-    sp = Image.open(SPARKLES).convert("RGBA")
-    # The sparkles in the brand orange (#EA6B2C): the one touch of colour on the white TV.
-    orange = Image.new("RGBA", sp.size, (234, 107, 44, 255))
-    orange.putalpha(sp.getchannel("A"))
-    sp = orange
-    k = (sh * 0.62) / sp.size[1]
-    sp = sp.resize((int(sp.size[0] * k), int(sp.size[1] * k)), Image.LANCZOS)
-    layer.alpha_composite(sp, (int(cx - sp.size[0] / 2), int(cy - sp.size[1] / 2)))
     return layer
 
 
