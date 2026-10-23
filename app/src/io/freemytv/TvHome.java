@@ -121,6 +121,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         android.text.StaticLayout overview;
         TextPaint overviewPaint;
         int serviceColor;
+        boolean saving;   // being written to disk: its bitmap isn't reused meanwhile
     }
 
     private final HashMap<Rows.Title, Plate> plates = new HashMap<>();
@@ -132,7 +133,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
     private final java.util.ArrayDeque<Long> spareAt = new java.util.ArrayDeque<>();
 
     private void release(Plate p) {
-        if (p == null || p.art == null || spare.size() >= 2) return;
+        if (p == null || p.art == null || p.saving || spare.size() >= 2) return;
         spare.add(p.art);
         spareAt.add(SystemClock.uptimeMillis());
     }
@@ -254,6 +255,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         handler.removeCallbacks(longPress);
         Choreographer.getInstance().removeFrameCallback(this);
         animating = false;
+        saveHero();
     }
 
     void destroy() {
@@ -347,9 +349,14 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         rowIndex = idx;
         rowOffset = off;
         if (zone == Z_ROW && row >= list.size()) zone = Z_DOCK;
-        heroIndex = 0;
+        // Carry on from the title on screen (restored from disk after a restart), else from the first.
+        int start = 0;
+        for (int i = 0; heroShown != null && i < top.size(); i++) {
+            if (top.get(i).id == heroShown.id && top.get(i).kind.equals(heroShown.kind)) start = i;
+        }
+        heroIndex = start;
         heroWanted = -1;
-        if (!featured.isEmpty()) showHero(0);
+        if (!featured.isEmpty()) showHero(start);
         focusChanged();
     }
 
@@ -407,10 +414,8 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         overviewPaint.setColor(0xCCEBEBF5);
         clockMinute = -1;
         updateClock();
-        if (!featured.isEmpty()) {
-            heroShown = null;
-            showHero(heroIndex);
-        }
+        if (plates.isEmpty()) restoreHero();   // a restarted home screen shows the last banner at once
+        if (!featured.isEmpty()) showHero(heroIndex);
         focusChanged();
         scroll.snap(scroll.target);
         dockOffset.snap(dockOffset.target);
@@ -1026,6 +1031,17 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         if (featured.isEmpty() || w == 0) return;
         index = ((index % featured.size()) + featured.size()) % featured.size();
         Rows.Title next = featured.get(index);
+        if (cachedHero != null && heroShown == cachedHero && next.id == cachedHero.id && next.kind.equals(cachedHero.kind)) {
+            // The rows arrived and their first title is the one restored from disk: it just takes its place.
+            plates.put(next, plates.remove(cachedHero));
+            heroShown = next;
+            cachedHero = null;
+            heroIndex = index;
+            heroWanted = -1;
+            plate(featured.get((index + 1) % featured.size()));
+            invalidate();
+            return;
+        }
         plate(featured.get((index + 1) % featured.size()));   // the next one, made ahead
         if (next == heroShown && heroWanted < 0) return;
         Plate p = plate(next);
@@ -1052,6 +1068,93 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         }
         wake();
         invalidate();
+    }
+
+    // MARK: - The banner on screen, kept on disk
+
+    /** The title restored from disk (until the rows arrive and the same title takes its place). */
+    private Rows.Title cachedHero;
+    private int savedHeroId = -1;
+
+    private java.io.File heroFile(String ext) {
+        return new java.io.File(getContext().getFilesDir(), "hero." + ext);
+    }
+
+    /**
+     * Leaving home: the banner on screen (its picture, shading included, and its text) goes to disk. On a 1 GB TV the
+     * home screen is often closed while an app runs; coming back, restoreHero shows this at once instead of a greeting
+     * while the rows load, decode and compose (3 to 5 seconds).
+     */
+    private void saveHero() {
+        Rows.Title t = heroShown;
+        Plate p = t == null ? null : plates.get(t);
+        if (p == null || t == cachedHero || t.id == savedHeroId) return;
+        savedHeroId = t.id;
+        p.saving = true;
+        final int sw = w;
+        final float kk = k;
+        blurrer.execute(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            java.io.File jpg = heroFile("jpg"), part = heroFile("part"), info = heroFile("json");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(part)) {
+                p.art.compress(Bitmap.CompressFormat.JPEG, 88, out);
+            } catch (java.io.IOException e) {
+                AppLog.w("banner cache: " + e.getMessage());
+            }
+            handler.post(() -> p.saving = false);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(info)) {
+                org.json.JSONObject o = new org.json.JSONObject().put("w", sw).put("id", t.id).put("kind", t.kind)
+                        .put("name", t.name).put("service", t.service).put("pkg", t.pkg).put("backdrop", t.backdrop)
+                        .put("overview", t.overview).put("title", p.title).put("meta", p.meta).put("watch", p.watch)
+                        .put("titleSize", p.titleSize / kk).put("color", p.serviceColor);
+                out.write(o.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                if (!part.renameTo(jpg)) AppLog.w("banner cache: couldn't save");
+            } catch (java.io.IOException | org.json.JSONException e) {
+                AppLog.w("banner cache: " + e.getMessage());
+            }
+        });
+    }
+
+    /** Shows the banner saved by saveHero (only when it was saved at this screen size). */
+    private void restoreHero() {
+        java.io.File jpg = heroFile("jpg"), info = heroFile("json");
+        if (!jpg.exists() || !info.exists() || w == 0) return;
+        try (java.io.FileInputStream in = new java.io.FileInputStream(info)) {
+            byte[] b = new byte[(int) info.length()];
+            int n = in.read(b);
+            org.json.JSONObject o = new org.json.JSONObject(new String(b, 0, Math.max(0, n), java.nio.charset.StandardCharsets.UTF_8));
+            if (o.optInt("w") != w) return;
+            Bitmap art = android.graphics.BitmapFactory.decodeFile(jpg.getPath());
+            if (art == null) return;
+            Rows.Title t = new Rows.Title();
+            t.id = o.optInt("id");
+            t.kind = o.optString("kind");
+            t.name = o.optString("name");
+            t.service = o.optString("service");
+            t.pkg = o.optString("pkg");
+            t.backdrop = o.optString("backdrop");
+            t.overview = o.optString("overview");
+            Plate p = new Plate();
+            p.art = art;
+            Bitmap small = Bitmap.createScaledBitmap(art, 160, 90, true);
+            Bitmap soft = Bitmap.createScaledBitmap(Bitmap.createScaledBitmap(small, 32, 18, true), 64, 36, true);
+            p.blur = new Bitmap[] {tone(soft, 0.5f, 0), tone(soft, 0.7f, 20), tone(soft, 0.2f, 0)};
+            p.service = t.service.toUpperCase(Locale.ROOT);
+            p.serviceColor = o.optInt("color", LABEL);
+            p.title = o.optString("title");
+            p.titleSize = (float) o.optDouble("titleSize", 80) * k;
+            p.meta = o.optString("meta");
+            p.watch = o.optString("watch");
+            p.overviewPaint = new TextPaint(overviewPaint);
+            p.overview = android.text.StaticLayout.Builder.obtain(t.overview, 0, t.overview.length(), p.overviewPaint, Math.round(860 * k))
+                    .setLineSpacing(0, 1.12f).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build();
+            plates.put(t, p);
+            heroShown = t;
+            cachedHero = t;
+            savedHeroId = t.id;
+        } catch (java.io.IOException | org.json.JSONException | RuntimeException e) {
+            AppLog.w("banner cache unreadable: " + e.getMessage());
+        }
     }
 
     /** The title's plate if ready; otherwise null, and it's made in the background once the artwork has arrived. */
