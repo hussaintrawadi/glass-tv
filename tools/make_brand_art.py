@@ -1,4 +1,4 @@
-"""Renders the app's icon and TV banner (dark, frosted glass, a white TV with sparkles) and the README icon.
+"""Renders the app's icon and TV banner (ink, frosted glass, a white TV with orange sparkles) and the README icon.
 No text on the banner: the name on the TV is a setting (brand_name).
 Usage: python3 tools/make_brand_art.py"""
 import os
@@ -11,12 +11,12 @@ SPARKLES = os.path.join(ROOT, "app", "assets", "symbols", "sparkles.png")
 
 
 def backdrop(w, h):
-    """Deep night blue with a violet glow top right and a teal one bottom left, like the home screen's glass."""
+    """Ink (#1D1D1F) with a warm orange glow top right and a cool blue one bottom left."""
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     img = np.zeros((h, w, 3), np.float32)
-    img[:] = (10, 11, 20)
-    for cx, cy, r, color, s in ((0.85, 0.1, 0.9, (110, 70, 230), 0.9), (0.1, 0.95, 0.9, (20, 120, 150), 0.7),
-                                (0.5, 0.5, 0.6, (60, 60, 140), 0.35)):
+    img[:] = (24, 24, 26)
+    for cx, cy, r, color, s in ((0.92, 0.05, 0.85, (234, 107, 44), 0.85), (0.05, 1.0, 0.85, (63, 143, 247), 0.45),
+                                (0.5, 0.45, 0.6, (60, 40, 30), 0.25)):
         d = ((x / w - cx) ** 2 + (y / h - cy) ** 2) / (r * r)
         img += np.exp(-d * 2.2)[..., None] * s * np.array(color, np.float32)
     img += np.random.default_rng(3).normal(0, 1.2, img.shape)
@@ -50,6 +50,10 @@ def tv_glyph(size, cx, cy, scale):
     d.rounded_rectangle((cx - sw * 0.28, cy + sh / 2 + stroke * 1.6, cx + sw * 0.28, cy + sh / 2 + stroke * 2.7),
                         stroke, fill=(255, 255, 255, 245))
     sp = Image.open(SPARKLES).convert("RGBA")
+    # The sparkles in the brand orange (#EA6B2C): the one touch of colour on the white TV.
+    orange = Image.new("RGBA", sp.size, (234, 107, 44, 255))
+    orange.putalpha(sp.getchannel("A"))
+    sp = orange
     k = (sh * 0.62) / sp.size[1]
     sp = sp.resize((int(sp.size[0] * k), int(sp.size[1] * k)), Image.LANCZOS)
     layer.alpha_composite(sp, (int(cx - sp.size[0] / 2), int(cy - sp.size[1] / 2)))
