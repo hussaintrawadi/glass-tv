@@ -21,8 +21,8 @@ import java.nio.charset.StandardCharsets;
  * Clear Voice: makes dialogue easy to follow on the TV's own speakers, for every app. On the TV's whole output (audio
  * session 0) it lifts the speech frequencies and trims the boom, evens out loud and quiet parts (so voices aren't
  * buried under music and effects), adds gain, and limits the peaks so the speakers never distort.
- * Modes: off, "voice" (dialogue first: voices lifted, music and effects held down) and "boost" (Loud & Even: the same,
- * with more lift for voices and more gain overall). A
+ * Modes: off, "voice" (Clear Voice: dialogue a little forward, a light touch) and "boost" (Smart Volume: dialogue first,
+ * and the level ridden slowly, like a hand on the remote, so loud and quiet scenes meet in the middle). A
  * foreground service: the effect
  * lives as long as this service does. The mode is kept in a file (the settings screen is in another process).
  */
@@ -93,24 +93,29 @@ public final class SoundService extends Service {
         boolean boost = BOOST.equals(m);
         try {
             dynamics = new DynamicsProcessing(PRIORITY, 0, config());
-            // Dialogue first. Voices live around 1-4.5 kHz (consonants, what makes words clear); music and effects
-            // carry most of their weight in the bass and the boom. So: the rumble cut, the voice presence lifted, the
-            // top softened...
-            dynamics.setInputGainAllChannelsTo(boost ? 5f : 3f);
-            float[][] eq = {{80, -8}, {200, -4}, {800, 0}, {3500, boost ? 7 : 6}, {7000, 1}, {20000, -2}};
+            dynamics.setInputGainAllChannelsTo(2f);
+            // Dialogue first, gently: less rumble, a little more voice presence (where consonants make words clear).
+            float[][] eq = {{150, -5}, {900, 0}, {4500, boost ? 4 : 5}, {20000, 0}};
             for (int i = 0; i < eq.length; i++) {
                 dynamics.setPreEqBandAllChannelsTo(i, new DynamicsProcessing.EqBand(true, eq[i][0], eq[i][1]));
             }
-            // ...then each band compressed on its own: the bass and boom (music, explosions) held DOWN with no make-up,
-            // the speech band levelled and lifted (quiet lines come up, and only they), the treble tamed. Music can't
-            // rise between the lines any more; voices sit on top. Loud & Even gives voices more lift and more overall
-            // gain.
-            dynamics.setMbcBandAllChannelsTo(0, new DynamicsProcessing.MbcBand(true, 200, 5, 200, 6f, boost ? -38 : -36, 6, -90, 1, 0, boost ? 0 : -2));
-            dynamics.setMbcBandAllChannelsTo(1, new DynamicsProcessing.MbcBand(true, 1000, 5, 150, 2.5f, -38, 6, -90, 1, 0, boost ? 6 : 4));
-            dynamics.setMbcBandAllChannelsTo(2, new DynamicsProcessing.MbcBand(true, 4500, 3, 120, 3f, boost ? -44 : -42, 6, -90, 1, 0, boost ? 12 : 9));
-            dynamics.setMbcBandAllChannelsTo(3, new DynamicsProcessing.MbcBand(true, 20000, 2, 100, 4f, -36, 6, -90, 1, 0, boost ? 1 : 0));
-            // The limiter: no peak goes over, so the speakers never crackle however loud it gets.
-            dynamics.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(true, true, 0, 1, 50, 20f, boost ? -1f : -2f, 0));
+            if (boost) {
+                // Smart Volume rides the volume the way a person would with the remote, slowly: it starts turning a
+                // loud scene down over a third of a second and brings a quiet one back up over two and a half seconds,
+                // so a change is a fade, never a jump. Soft and mild (2.5:1 above -30 dB, a 12 dB knee): a raised
+                // voice in a scene stays a raised voice; only scenes clearly too loud or too quiet are moved. The voice
+                // band gets the make-up gain, the bass of music and effects doesn't.
+                dynamics.setMbcBandAllChannelsTo(0, new DynamicsProcessing.MbcBand(true, 250, 300, 2500, 3f, -30, 12, -90, 1, 0, 1));
+                dynamics.setMbcBandAllChannelsTo(1, new DynamicsProcessing.MbcBand(true, 4500, 300, 2500, 2.5f, -30, 12, -90, 1, 0, 8));
+                dynamics.setMbcBandAllChannelsTo(2, new DynamicsProcessing.MbcBand(true, 20000, 300, 2500, 2.5f, -30, 12, -90, 1, 0, 4));
+            } else {
+                // Clear Voice: a light, slow touch on each band; the voice band a little forward, the boom a little back.
+                dynamics.setMbcBandAllChannelsTo(0, new DynamicsProcessing.MbcBand(true, 250, 80, 800, 2f, -28, 10, -90, 1, 0, -1));
+                dynamics.setMbcBandAllChannelsTo(1, new DynamicsProcessing.MbcBand(true, 4500, 60, 700, 2f, -30, 10, -90, 1, 0, 4));
+                dynamics.setMbcBandAllChannelsTo(2, new DynamicsProcessing.MbcBand(true, 20000, 50, 600, 2f, -28, 10, -90, 1, 0, 1));
+            }
+            // A fast safety limiter only for rare sudden peaks, so nothing crackles. It never rides the level itself.
+            dynamics.setLimiterAllChannelsTo(new DynamicsProcessing.Limiter(true, true, 0, 1, 80, 10f, -1f, 0));
             dynamics.setEnabled(true);
             AppLog.w("clear voice on (" + m + "), control: " + dynamics.hasControl());
         } catch (RuntimeException e) {
@@ -130,7 +135,7 @@ public final class SoundService extends Service {
 
     private static DynamicsProcessing.Config config() {
         return new DynamicsProcessing.Config.Builder(DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
-                true, 6, true, 4, false, 0, true).setPreferredFrameDuration(10).build();
+                true, 4, true, 3, false, 0, true).setPreferredFrameDuration(10).build();
     }
 
     private void release() {

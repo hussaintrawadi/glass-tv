@@ -32,7 +32,7 @@ public final class MonitorActivity extends Activity {
     private static final long REFRESH_MS = 2000;
     private static final String[] ACTIONS = {"Sound", "Free Up Memory", "Manage Storage", "Apps"};
     private static final String[] SOUND_MODES = {SoundService.OFF, SoundService.VOICE, SoundService.BOOST};
-    private static final String[] SOUND_NAMES = {"Off", "Clear Voice", "Loud & Even"};
+    private static final String[] SOUND_NAMES = {"Off", "Clear Voice", "Smart Volume"};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ActivityManager am;
@@ -100,7 +100,7 @@ public final class MonitorActivity extends Activity {
 
     private void act() {
         if (focus == 0) {
-            // Off → Clear Voice → Loud & Even → Off
+            // Off → Clear Voice → Smart Volume → Off
             String now = SoundService.mode(this);
             int i = 0;
             while (i < SOUND_MODES.length && !SOUND_MODES[i].equals(now)) i++;
@@ -229,7 +229,7 @@ public final class MonitorActivity extends Activity {
                 }
                 y += 86 * k;
             }
-            c.drawText(focus == 0 ? "Voices on top: dialogue lifted, music and effects held down. OK changes the mode."
+            c.drawText(focus == 0 ? "Smart Volume rides the volume slowly: loud scenes fade down, quiet ones fade up."
                     : focus == 1 ? "Closes apps waiting in the background." : "Opens the TV's own settings.", x, y + 26 * k, note);
         }
 
