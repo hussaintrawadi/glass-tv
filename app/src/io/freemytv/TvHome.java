@@ -228,6 +228,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         glassRim.setShader(glassRimShader);
         rows.setListener(this);
         onRows();
+        quickDock();   // the dock as it was, from disk, before the first frame
         loadApps();
     }
 
@@ -360,6 +361,66 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         focusChanged();
     }
 
+    // MARK: - The dock, kept on disk
+
+    private static java.io.File dockDir(Context c) {
+        return new java.io.File(c.getFilesDir(), "dock");
+    }
+
+    /** The dock's apps in order, with their names, and each one's art (once): what quickDock shows on a restart. */
+    private static void saveDock(Context c, List<HomeApps.Item> shelf) {
+        java.io.File dir = dockDir(c);
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        StringBuilder index = new StringBuilder();
+        for (HomeApps.Item it : shelf) {
+            if (it.pkg == null || it.tile == null) continue;
+            java.io.File art = new java.io.File(dir, it.pkg + ".png");
+            if (!art.exists()) {
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(art)) {
+                    it.tile.compress(Bitmap.CompressFormat.PNG, 100, out);
+                } catch (java.io.IOException e) {
+                    continue;
+                }
+            }
+            index.append(it.pkg).append('\t').append(it.label.replace('\t', ' ').replace('\n', ' ')).append('\n');
+        }
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, "index.txt"))) {
+            out.write(index.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.io.IOException e) {
+            AppLog.w("dock cache: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The dock as it was last time, read from disk (a few small images): on a 1 GB TV the home screen is often closed
+     * while an app runs, and rebuilding the dock from the apps themselves took a second or two. loadApps then brings
+     * it up to date in the background.
+     */
+    private void quickDock() {
+        java.io.File dir = dockDir(getContext()), index = new java.io.File(dir, "index.txt");
+        if (!index.exists()) return;
+        List<HomeApps.Item> list = new ArrayList<>();
+        try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(
+                new java.io.FileInputStream(index), java.nio.charset.StandardCharsets.UTF_8))) {
+            for (String line; (line = in.readLine()) != null; ) {
+                int tab = line.indexOf('\t');
+                if (tab <= 0) continue;
+                String pkg = line.substring(0, tab);
+                Bitmap art = android.graphics.BitmapFactory.decodeFile(new java.io.File(dir, pkg + ".png").getPath());
+                if (art == null) return;   // incomplete: wait for the full load
+                HomeApps.Item it = HomeApps.app(pkg, line.substring(tab + 1));
+                it.tile = art;
+                list.add(it);
+            }
+        } catch (java.io.IOException e) {
+            return;
+        }
+        if (list.isEmpty()) return;
+        list.add(addTile);
+        apps = list;
+    }
+
     /** The dock's apps and All Apps, built off the UI thread (reading the apps' TV art takes a moment). */
     private void loadApps() {
         appsStale = false;
@@ -368,6 +429,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         new Thread(() -> {
             List<HomeApps.Item> shelf = HomeApps.shelf(c, true);
             for (HomeApps.Item it : shelf) if (it.pkg != null) it.tile = HomeApps.banner(c, it.pkg);
+            saveDock(c, shelf);
             List<HomeApps.Item> rest = HomeApps.others(c);
             rest.add(0, HomeApps.action(HomeApps.MONITOR, "monitor", "Performance", "monitor"));
             rest.add(1, HomeApps.action(HomeApps.ANDROID_SETTINGS, "tv-settings", "TV Settings", "tv_settings"));
@@ -415,7 +477,15 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         clockMinute = -1;
         updateClock();
         if (plates.isEmpty()) restoreHero();   // a restarted home screen shows the last banner at once
-        if (!featured.isEmpty()) showHero(heroIndex);
+        if (!featured.isEmpty()) {
+            // The rows may have loaded before the size was known: carry on from the title on screen.
+            int at = heroIndex;
+            for (int i = 0; heroShown != null && i < featured.size(); i++) {
+                if (featured.get(i).id == heroShown.id && featured.get(i).kind.equals(heroShown.kind)) at = i;
+            }
+            heroWanted = -1;
+            showHero(at);
+        }
         focusChanged();
         scroll.snap(scroll.target);
         dockOffset.snap(dockOffset.target);
