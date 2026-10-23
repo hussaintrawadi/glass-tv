@@ -229,8 +229,11 @@ public final class MonitorActivity extends Activity {
                 }
                 y += 86 * k;
             }
-            c.drawText(focus == 0 ? "Smart Volume rides the volume slowly: loud scenes fade down, quiet ones fade up."
-                    : focus == 1 ? "Closes apps waiting in the background." : "Opens the TV's own settings.", x, y + 26 * k, note);
+            String tip = focus == 0 ? "Smart Volume: loud scenes fade down, quiet ones fade up."
+                    : focus == 1 ? "Closes apps waiting in the background." : "Opens the TV's own settings.";
+            // Always inside the column, whatever the language or text.
+            tip = android.text.TextUtils.ellipsize(tip, new android.text.TextPaint(note), right - x, android.text.TextUtils.TruncateAt.END).toString();
+            c.drawText(tip, x, y + 26 * k, note);
         }
 
         /** A group: header, a row with the main value, a thin meter and the detail. Returns the y after it. */
