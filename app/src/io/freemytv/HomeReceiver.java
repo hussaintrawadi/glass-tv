@@ -8,7 +8,7 @@ import android.content.Intent;
 public class HomeReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        SoundService.start(context);   // Clear Voice back on after a restart or an update
+        SoundService.start(context);   // Dialogue Boost back on after a restart or an update
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             HomeMode.bootCheck(context);
         } else if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {

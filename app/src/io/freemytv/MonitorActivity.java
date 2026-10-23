@@ -31,8 +31,8 @@ import java.util.Locale;
 public final class MonitorActivity extends Activity {
     private static final long REFRESH_MS = 2000;
     private static final String[] ACTIONS = {"Sound", "Free Up Memory", "Manage Storage", "Apps"};
-    private static final String[] SOUND_MODES = {SoundService.OFF, SoundService.VOICE, SoundService.BOOST};
-    private static final String[] SOUND_NAMES = {"Off", "Clear Voice", "Smart Volume"};
+    private static final String[] SOUND_MODES = {SoundService.OFF, SoundService.VOICE};
+    private static final String[] SOUND_NAMES = {"Off", "Dialogue Boost"};
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ActivityManager am;
@@ -100,7 +100,7 @@ public final class MonitorActivity extends Activity {
 
     private void act() {
         if (focus == 0) {
-            // Off → Clear Voice → Smart Volume → Off
+            // Off ↔ Dialogue Boost
             String now = SoundService.mode(this);
             int i = 0;
             while (i < SOUND_MODES.length && !SOUND_MODES[i].equals(now)) i++;
@@ -229,7 +229,7 @@ public final class MonitorActivity extends Activity {
                 }
                 y += 86 * k;
             }
-            String tip = focus == 0 ? "Smart Volume: loud scenes fade down, quiet ones fade up."
+            String tip = focus == 0 ? "Dialogue Boost: voices forward, the boom a little back."
                     : focus == 1 ? "Closes apps waiting in the background." : "Opens the TV's own settings.";
             // Always inside the column, whatever the language or text.
             tip = android.text.TextUtils.ellipsize(tip, new android.text.TextPaint(note), right - x, android.text.TextUtils.TruncateAt.END).toString();

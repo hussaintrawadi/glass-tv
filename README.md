@@ -7,7 +7,7 @@
 **An Apple TV style home screen for Android TV. Fast, ad-free, and made for 1 GB TVs.**
 
 A full-screen featured title, your apps on a frosted glass dock, rows of what's popular on the
-apps you already have, a performance tab with a memory cleaner, and clearer, louder sound.
+apps you already have, a performance tab with a memory cleaner, and Dialogue Boost for clearer voices.
 No ads, no accounts, no tracking.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -61,12 +61,9 @@ and Claude wrote the Java. It builds on the open source [Free My TV](https://git
 ### Performance & Sound
 - **Live memory and storage**, and **Free Up Memory**, which asks Android to close the apps
   waiting in the background (the app you're watching stays open).
-- **Clear Voice:** dialogue a little forward. A light touch on the voice band and the boom, so
-  words are easier to follow without changing how the film sounds.
-- **Smart Volume:** rides the volume the way you would with the remote, slowly: a loud scene fades
-  down over a third of a second, a quiet one comes back up over two and a half. Mild and soft, so
-  a raised voice stays a raised voice; only scenes clearly too loud or too quiet are moved, and
-  the voice band gets the lift, not the bass of the music.
+- **Dialogue Boost:** voices forward, in every app. It lifts the speech frequencies and trims the
+  boom of music and effects, so words are easier to follow on the TV's own speakers. It never rides
+  the volume: loud and quiet scenes stay the way the film was mixed.
 
 ### No ads, no clutter
 - Turns off the TV maker's promo channels, ad rows and telemetry apps (never uninstalls them).
@@ -146,8 +143,8 @@ it switches back by itself.
 ## Limitations
 
 - Recommendations come from TMDB and need your own key (free). Airtel Xstream and YouTube aren't on TMDB.
-- The sound modes work on the TV's own speakers and on most TVs; some TVs block apps from changing
-  the main audio output, and then the modes have no effect.
+- Dialogue Boost works on the TV's own speakers and on most TVs; some TVs block apps from changing
+  the main audio output, and then it has no effect.
 - The LG (`webos/`) and Samsung (`tizen/`) versions come from Free My TV and don't have the new design.
 - It's tuned for 720p and 1080p TV interfaces on Android 8 to 14.
 
@@ -158,7 +155,7 @@ it switches back by itself.
 | [`TvHome.java`](app/src/io/freemytv/TvHome.java) | The home screen: banner, glass, dock, rows, All Apps |
 | [`Rows.java`](app/src/io/freemytv/Rows.java) | Recommendations from TMDB, cached on disk, and the image cache |
 | [`MonitorActivity.java`](app/src/io/freemytv/MonitorActivity.java) | Performance & Sound |
-| [`SoundService.java`](app/src/io/freemytv/SoundService.java) | Clear Voice and Smart Volume |
+| [`SoundService.java`](app/src/io/freemytv/SoundService.java) | Dialogue Boost |
 | [`HomeMode.java`](app/src/io/freemytv/HomeMode.java) | The switch between Glass TV and the original home screen, and what it turns off |
 | [`SettingsActivity.java`](app/src/io/freemytv/SettingsActivity.java) | The settings screen (the app's icon) |
 | [`build.sh`](build.sh) | The build: aapt2, javac, d8, zipalign, apksigner. No Gradle |
