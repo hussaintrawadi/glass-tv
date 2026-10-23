@@ -133,7 +133,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
     private final java.util.ArrayDeque<Long> spareAt = new java.util.ArrayDeque<>();
 
     private void release(Plate p) {
-        if (p == null || p.art == null || p.saving || spare.size() >= 2) return;
+        if (p == null || p.art == null || !p.art.isMutable() || p.saving || spare.size() >= 2) return;
         spare.add(p.art);
         spareAt.add(SystemClock.uptimeMillis());
     }
@@ -240,6 +240,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         handler.post(tick);
         handler.removeCallbacks(nextHero);
         handler.postDelayed(nextHero, HERO_EVERY);
+        ensureBanner();   // the banner is on screen from the first frame back, never "Good evening" while it loads
         rows.refresh();
         // Coming back from an app: the dock is already built. Only an install, an update or an uninstall (or a
         // quarter of an hour) rebuilds it, so returning home costs no work.
@@ -290,7 +291,9 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
 
     void trim() {
         rows.trim();
-        plates.clear();
+        // The banner on screen stays, always: dropping it is what left "Good evening" on screen after an app.
+        Rows.Title keep = heroShown;
+        plates.keySet().removeIf(t -> t != keep);
         spare.clear();
         spareAt.clear();
         heroFrom = null;
@@ -427,6 +430,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         appsAt = SystemClock.uptimeMillis();
         Context c = getContext().getApplicationContext();
         new Thread(() -> {
+            try {
             List<HomeApps.Item> shelf = HomeApps.shelf(c, true);
             for (HomeApps.Item it : shelf) if (it.pkg != null) it.tile = HomeApps.banner(c, it.pkg);
             saveDock(c, shelf);
@@ -442,6 +446,10 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
                 sheetIndex = Math.min(sheetIndex, Math.max(0, sheetList().size() - 1));
                 focusChanged();
             });
+            } catch (Throwable e) {
+                AppLog.w("apps: " + e);   // the dock keeps what it shows; tried again on the next resume
+                handler.post(() -> appsStale = true);
+            }
         }, "apps").start();
     }
 
@@ -476,16 +484,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         overviewPaint.setColor(0xCCEBEBF5);
         clockMinute = -1;
         updateClock();
-        if (plates.isEmpty()) restoreHero();   // a restarted home screen shows the last banner at once
-        if (!featured.isEmpty()) {
-            // The rows may have loaded before the size was known: carry on from the title on screen.
-            int at = heroIndex;
-            for (int i = 0; heroShown != null && i < featured.size(); i++) {
-                if (featured.get(i).id == heroShown.id && featured.get(i).kind.equals(heroShown.kind)) at = i;
-            }
-            heroWanted = -1;
-            showHero(at);
-        }
+        ensureBanner();
         focusChanged();
         scroll.snap(scroll.target);
         dockOffset.snap(dockOffset.target);
@@ -503,6 +502,15 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
     }
 
     @Override public void doFrame(long nanos) {
+        try {
+            frame(nanos);
+        } catch (RuntimeException e) {
+            AppLog.w("frame: " + e);
+            animating = false;
+        }
+    }
+
+    private void frame(long nanos) {
         if (!running) {
             animating = false;
             return;
@@ -532,6 +540,18 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
     // MARK: - Drawing
 
     @Override protected void onDraw(Canvas c) {
+        try {
+            draw(c, 0);
+        } catch (RuntimeException e) {
+            // A home screen must never go down: this frame is skipped, the next one tries again.
+            if (SystemClock.uptimeMillis() - drawErrorAt > 10_000) AppLog.w("draw: " + e);
+            drawErrorAt = SystemClock.uptimeMillis();
+        }
+    }
+
+    private long drawErrorAt;
+
+    private void draw(Canvas c, int unused) {
         if (title == null) return;
         if (sheet.value >= 0.999f) {   // All Apps covers everything: nothing under it is drawn
             drawSheet(c);
@@ -865,6 +885,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         Paint text = new Paint(cardName);
         blurrer.execute(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            try {
             Bitmap out = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
             Canvas cv = new Canvas(out);
             RectF box = new RectF(0, 0, bw, bh);
@@ -887,6 +908,10 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
                 rows.forget(t);   // the card has it now
                 invalidate();
             });
+            } catch (Throwable e) {
+                AppLog.w("card " + t.name + ": " + e);   // a plain card shows; tried again when it's next drawn
+                handler.post(() -> baking.remove(t));
+            }
         });
         return null;
     }
@@ -1113,7 +1138,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
             return;
         }
         plate(featured.get((index + 1) % featured.size()));   // the next one, made ahead
-        if (next == heroShown && heroWanted < 0) return;
+        if (next == heroShown && heroWanted < 0 && plates.containsKey(next)) return;   // already on screen, ready
         Plate p = plate(next);
         if (p == null) {   // not ready: it starts as soon as it is (onRows, or when the plate is done)
             heroWanted = index;
@@ -1138,6 +1163,22 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         }
         wake();
         invalidate();
+    }
+
+    /**
+     * Makes sure a banner is ready to show: the one in memory, else the last one shown, from disk (about 50 ms), then the
+     * live recommendations carry on from that title (or start from the first one) as soon as their plate is made.
+     */
+    private void ensureBanner() {
+        if (w == 0) return;
+        if (heroShown == null || plates.get(heroShown) == null) restoreHero();
+        if (featured.isEmpty()) return;
+        int at = heroIndex;
+        for (int i = 0; heroShown != null && i < featured.size(); i++) {
+            if (featured.get(i).id == heroShown.id && featured.get(i).kind.equals(heroShown.kind)) at = i;
+        }
+        heroWanted = -1;
+        showHero(at);
     }
 
     // MARK: - The banner on screen, kept on disk
@@ -1165,6 +1206,7 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
         final float kk = k;
         blurrer.execute(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            try {
             java.io.File jpg = heroFile("jpg"), part = heroFile("part"), info = heroFile("json");
             try (java.io.FileOutputStream out = new java.io.FileOutputStream(part)) {
                 p.art.compress(Bitmap.CompressFormat.JPEG, 88, out);
@@ -1182,6 +1224,10 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
             } catch (java.io.IOException | org.json.JSONException e) {
                 AppLog.w("banner cache: " + e.getMessage());
             }
+            } catch (Throwable e) {
+                AppLog.w("banner cache: " + e);
+                handler.post(() -> p.saving = false);
+            }
         });
     }
 
@@ -1194,7 +1240,9 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
             int n = in.read(b);
             org.json.JSONObject o = new org.json.JSONObject(new String(b, 0, Math.max(0, n), java.nio.charset.StandardCharsets.UTF_8));
             if (o.optInt("w") != w) return;
-            Bitmap art = android.graphics.BitmapFactory.decodeFile(jpg.getPath());
+            android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
+            opts.inMutable = true;   // like every other plate, so it can be reused later
+            Bitmap art = android.graphics.BitmapFactory.decodeFile(jpg.getPath(), opts);
             if (art == null) return;
             Rows.Title t = new Rows.Title();
             t.id = o.optInt("id");
@@ -1220,10 +1268,12 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
                     .setLineSpacing(0, 1.12f).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build();
             plates.put(t, p);
             heroShown = t;
+            heroFrom = null;
+            heroFadeAt = 0;
             cachedHero = t;
             savedHeroId = t.id;
-        } catch (java.io.IOException | org.json.JSONException | RuntimeException e) {
-            AppLog.w("banner cache unreadable: " + e.getMessage());
+        } catch (Throwable e) {   // a bad or partial file: just start without it
+            AppLog.w("banner cache unreadable: " + e);
         }
     }
 
@@ -1252,7 +1302,9 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             Plate p = new Plate();
             // The artwork at screen size with the shading on it: dark on the left for the text, at the bottom for the dock.
-            p.art = reuse != null && reuse.getWidth() == sw && reuse.getHeight() == sh ? reuse
+            try {
+            // A spare is reused only if it can be drawn into (one decoded from disk can't).
+            p.art = reuse != null && reuse.isMutable() && reuse.getWidth() == sw && reuse.getHeight() == sh ? reuse
                     : Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
             Canvas cv = new Canvas(p.art);
             cv.drawColor(0xFF000000);
@@ -1291,6 +1343,11 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
                 if (heroWanted >= 0 && heroWanted < featured.size() && featured.get(heroWanted) == t) showHero(heroWanted);
                 invalidate();
             });
+            } catch (Throwable e) {
+                // Never fatal: the banner keeps the title it has, and this one is tried again next time.
+                AppLog.w("banner " + t.name + ": " + e);
+                handler.post(() -> plating.remove(t));
+            }
         });
         return null;
     }
@@ -1315,6 +1372,15 @@ final class TvHome extends View implements Choreographer.FrameCallback, Rows.Lis
     // MARK: - Keys
 
     boolean onKey(KeyEvent e) {
+        try {
+            return handleKey(e);
+        } catch (RuntimeException ex) {
+            AppLog.w("key: " + ex);   // the key is dropped, the home screen stays
+            return true;
+        }
+    }
+
+    private boolean handleKey(KeyEvent e) {
         int code = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         switch (code) {

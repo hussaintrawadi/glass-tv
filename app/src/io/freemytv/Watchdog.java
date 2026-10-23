@@ -28,6 +28,12 @@ final class Watchdog {
         final Context app = c.getApplicationContext();
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            // A background thread failing (an image, a fetch) must not take the home screen down: logged, not fatal.
+            // The guarded tasks catch their own errors; this is the last line for anything else.
+            if (thread != android.os.Looper.getMainLooper().getThread()) {
+                AppLog.w("background error (" + thread.getName() + "), kept running: " + error);
+                return;
+            }
             try {
                 if (record(app, System.currentTimeMillis()) >= LIMIT) HomeMode.requestRevertHome(app);
             } catch (Throwable ignored) {

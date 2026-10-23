@@ -112,8 +112,8 @@ final class Rows {
         io.execute(() -> {
             try {
                 fetch();
-            } catch (Exception e) {
-                AppLog.w("rows: " + e.getMessage());
+            } catch (Throwable e) {
+                AppLog.w("rows: " + e);
             } finally {
                 fetching = false;
             }
@@ -285,8 +285,8 @@ final class Rows {
                 list.add(r);
             }
             publish(list, fromJson(o.getJSONArray("featured")), o.optLong("at"));
-        } catch (IOException | JSONException e) {
-            AppLog.w("rows: saved copy unreadable: " + e.getMessage());
+        } catch (Throwable e) {
+            AppLog.w("rows: saved copy unreadable: " + e);
         }
     }
 
@@ -349,8 +349,8 @@ final class Rows {
                 o.inPreferredConfig = large ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
                 decoded = BitmapFactory.decodeFile(f.getPath(), o);
                 if (decoded == null) f.delete();   // a broken download: fetched again next time
-            } catch (IOException e) {
-                AppLog.w("image: " + e.getMessage());
+            } catch (Throwable e) {   // no network, a broken file, out of memory: never fatal, tried again later
+                AppLog.w("image: " + e);
             }
             Bitmap done = decoded;
             main.post(() -> {
